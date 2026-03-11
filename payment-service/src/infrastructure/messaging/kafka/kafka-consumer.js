@@ -44,7 +44,7 @@ class KafkaConsumer {
     }
 
     try {
-      const result = await this.paymentProcessor.process(parsedPayload);
+      const result = await this.paymentProcessor.processPayment(parsedPayload.id, parsedPayload.amount);
       this.logger.info('Message processed successfully', {
         topic,
         partition,
@@ -52,7 +52,13 @@ class KafkaConsumer {
         status: result.status,
       });
     } catch (error) {
-      this.logger.error(`Error processing message from topic ${topic}:`, error);
+      this.logger.error('Error processing message', {
+        topic,
+        partition,
+        orderId: parsedPayload.id,
+        message: error.message,
+      });
+      throw error;
     }
   }
 
@@ -64,7 +70,10 @@ class KafkaConsumer {
       });
       return payload;
     } catch (error) {
-      this.logger.error(`Invalid message payload on topic ${topic}:`, error);
+      this.logger.error('Invalid message payload', {
+        topic,
+        message: error.message,
+      });
       return null;
     }
   }
