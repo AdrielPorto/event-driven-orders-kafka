@@ -1,24 +1,54 @@
 class PaymentProcessor {
-  constructor({ logger, processingDelayMs = 2000 }) {
+  constructor({ logger, paymentRepository }) {
     this.logger = logger;
-    this.processingDelayMs = processingDelayMs;
+    this.paymentRepository = paymentRepository;
   }
 
-  async process(orderEvent) {
-    const orderId = orderEvent?.id || 'unknown-order';
+  async processPayment(orderId, amount) {
+    if (!orderId) {
+      throw new Error('orderId is required to process payment');
+    }
 
-    this.logger.info('Starting payment processing', { orderId });
-
-    await new Promise((resolve) => setTimeout(resolve, this.processingDelayMs));
-
-    const result = {
+    const parsedAmount = Number.isFinite(Number(amount)) ? Number(amount) : 0;
+    const reservation = await this.paymentRepository.reserveProcessing({
       orderId,
-      status: 'APPROVED',
-      processedAt: new Date().toISOString(),
-    };
+      amount: parsedAmount,
+    });
 
-    this.logger.info('Payment processing completed', result);
-    return result;
+    if (!reservation.created) {
+      this.logger.info('Skipping duplicated order processing', {
+        orderId,
+        currentStatus: reservation.payment?.status || 'UNKNOWN',
+      });
+      return {
+        success: true,
+        orderId,
+        status: reservation.payment?.status || 'UNKNOWN',
+        duplicated: true,
+      };
+    }
+
+    this.logger.info('Starting payment processing', {
+      orderId,
+      amount: parsedAmount,
+    });
+
+    try {
+      // Simulate payment processing delay of 2 seconds
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      await this.paymentRepository.updateStatus(orderId, 'APPROVED');
+      this.logger.info('Payment approved', { orderId });
+
+      return { success: true, orderId, status: 'APPROVED' };
+    } catch (error) {
+      this.logger.error('Error processing payment', {
+        orderId,
+        message: error.message,
+      });
+      await this.paymentRepository.updateStatus(orderId, 'FAILED');
+      return { success: false, orderId, status: 'FAILED' };
+    }
   }
 }
 
