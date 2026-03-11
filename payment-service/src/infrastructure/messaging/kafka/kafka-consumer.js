@@ -1,9 +1,19 @@
 const { Kafka } = require('kafkajs');
 
 class KafkaConsumer {
-  constructor({ clientId, brokers, groupId, logger, paymentProcessor }) {
+  constructor({
+    clientId,
+    brokers,
+    groupId,
+    logger,
+    paymentProcessor,
+    dlqPublisher,
+    dlqTopic,
+  }) {
     this.logger = logger;
     this.paymentProcessor = paymentProcessor;
+    this.dlqPublisher = dlqPublisher;
+    this.dlqTopic = dlqTopic;
     this.isConnected = false;
 
     this.kafka = new Kafka({
@@ -45,6 +55,15 @@ class KafkaConsumer {
 
     try {
       const result = await this.paymentProcessor.processPayment(parsedPayload.id, parsedPayload.amount);
+
+      if (result.shouldSendToDlq) {
+        await this.sendToDlq({
+          sourceTopic: topic,
+          payload: parsedPayload,
+          failure: result,
+        });
+      }
+
       this.logger.info('Message processed successfully', {
         topic,
         partition,
@@ -58,8 +77,38 @@ class KafkaConsumer {
         orderId: parsedPayload.id,
         message: error.message,
       });
-      throw error;
+      await this.sendToDlq({
+        sourceTopic: topic,
+        payload: parsedPayload,
+        failure: {
+          orderId: parsedPayload.id || null,
+          status: 'FAILED',
+          errorMessage: error.message,
+        },
+      });
     }
+  }
+
+  async sendToDlq({ sourceTopic, payload, failure }) {
+    const dlqMessage = {
+      sourceTopic,
+      failedAt: new Date().toISOString(),
+      reason: failure.errorMessage || 'Unknown payment processing error',
+      orderId: failure.orderId || payload.id || null,
+      status: failure.status || 'FAILED',
+      payload,
+    };
+
+    await this.dlqPublisher.publish({
+      topic: this.dlqTopic,
+      key: dlqMessage.orderId ? String(dlqMessage.orderId) : null,
+      payload: dlqMessage,
+    });
+
+    this.logger.info('Message sent to DLQ', {
+      topic: this.dlqTopic,
+      orderId: dlqMessage.orderId,
+    });
   }
 
   parseMessage(message, topic) {

@@ -6,6 +6,23 @@ const parseBrokers = (value) =>
     .map((broker) => broker.trim())
     .filter(Boolean);
 
+const parseFailureRate = (value) => {
+  const parsed = Number.parseFloat(value);
+  if (Number.isNaN(parsed)) {
+    return 0.3;
+  }
+
+  if (parsed < 0) {
+    return 0;
+  }
+
+  if (parsed > 1) {
+    return 1;
+  }
+
+  return parsed;
+};
+
 module.exports = Object.freeze({
   kafka: {
     clientId: process.env.KAFKA_CLIENT_ID || 'payment-service',
@@ -18,6 +35,9 @@ module.exports = Object.freeze({
       paymentStatus: process.env.PAYMENT_STATUS_TOPIC || 'payment-status',
       paymentFailedDlq: process.env.PAYMENT_FAILED_DLQ_TOPIC || 'payment-failed-dlq',
     },
+  },
+  payment: {
+    failureRate: parseFailureRate(process.env.PAYMENT_FAILURE_RATE || '0.3'),
   },
   database: {
     host: process.env.DB_HOST || 'localhost',
