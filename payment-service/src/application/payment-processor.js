@@ -1,12 +1,25 @@
 class PaymentProcessor {
-  constructor({ logger, paymentRepository }) {
+  constructor({
+    logger,
+    paymentRepository,
+    failureRate = 0.3,
+    random = Math.random,
+  }) {
     this.logger = logger;
     this.paymentRepository = paymentRepository;
+    this.failureRate = failureRate;
+    this.random = random;
   }
 
   async processPayment(orderId, amount) {
     if (!orderId) {
-      throw new Error('orderId is required to process payment');
+      return {
+        success: false,
+        orderId: null,
+        status: 'FAILED',
+        shouldSendToDlq: true,
+        errorMessage: 'orderId is required to process payment',
+      };
     }
 
     const parsedAmount = Number.isFinite(Number(amount)) ? Number(amount) : 0;
@@ -25,6 +38,7 @@ class PaymentProcessor {
         orderId,
         status: reservation.payment?.status || 'UNKNOWN',
         duplicated: true,
+        shouldSendToDlq: false,
       };
     }
 
@@ -37,17 +51,32 @@ class PaymentProcessor {
       // Simulate payment processing delay of 2 seconds
       await new Promise((resolve) => setTimeout(resolve, 2000));
 
+      if (this.random() < this.failureRate) {
+        throw new Error('Simulated random payment failure');
+      }
+
       await this.paymentRepository.updateStatus(orderId, 'APPROVED');
       this.logger.info('Payment approved', { orderId });
 
-      return { success: true, orderId, status: 'APPROVED' };
+      return {
+        success: true,
+        orderId,
+        status: 'APPROVED',
+        shouldSendToDlq: false,
+      };
     } catch (error) {
       this.logger.error('Error processing payment', {
         orderId,
         message: error.message,
       });
       await this.paymentRepository.updateStatus(orderId, 'FAILED');
-      return { success: false, orderId, status: 'FAILED' };
+      return {
+        success: false,
+        orderId,
+        status: 'FAILED',
+        shouldSendToDlq: true,
+        errorMessage: error.message,
+      };
     }
   }
 }
