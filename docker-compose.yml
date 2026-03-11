@@ -55,6 +55,20 @@ services:
     networks:
       - kafka-net
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: orders_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - kafka-net
+
 networks:
   kafka-net:
     driver: bridge
@@ -63,3 +77,4 @@ volumes:
   zookeeper_data:
   zookeeper_log:
   broker_data:
+  postgres_data:
